@@ -762,10 +762,11 @@ EndOfBlkWrite:
 	JSR Xfer1stByte
 	LDA ZP_FDSCTRL
 	ORA #$10 ; transfer the CRC
+	AND #$7F ; no transfer IRQs: nothing services them during the CRC
 	STA ZP_FDSCTRL
 	STA FDSCTRL
-	; The drive raises no transfer IRQs while it sends the two CRC bytes
-	; (about 300 cycles), so wait them out.
+	; Drives differ on flagging CRC bytes, so wait out the two CRC bytes with
+	; a delay: about 450 cycles until the second one finishes shifting out.
 	JSR Delay131
 	JSR Delay131
 	JSR Delay131
