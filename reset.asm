@@ -93,9 +93,7 @@ RESET:
 @softReset:
     LDA #$53 ; the game has already booted once
     STA RESET_ACTION_2
-    LDA #$80
-    STA ZP_PPUCTRL
-    STA PPUCTRL
+    JSR HandOffPpu
     JMP (DISK_RESET_VEC)
 @coldBoot:
 
@@ -165,8 +163,7 @@ RESET:
 
     LDA #$80
     STA $101
-    STA ZP_PPUCTRL
-    STA PPUCTRL
+    JSR HandOffPpu
 
     LDA #$C0
     STA $100
@@ -232,3 +229,14 @@ BootList:
     .byte $ff,$ff,$ff,$ff,$ff,$ff
     .byte $00,$00
     .byte $ff,$ff
+
+
+; Start the game with NMIs on, as some games expect, but just after a vblank,
+; so the game gets a whole frame to set itself up before its first NMI.
+HandOffPpu:
+    JSR VINTWait
+    LDA PPUSTATUS ; clear the vblank flag so enabling NMIs doesn't fire one now
+    LDA #$80
+    STA ZP_PPUCTRL
+    STA PPUCTRL
+    RTS
