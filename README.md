@@ -4,6 +4,14 @@ This project has one goal - a compatible re-implementation of the Famicom Disk S
 
 FreeDiskSysROM aims to provide a replacement for the original FDS BIOS that can be freely redistributed and that is capable of running all published FDS software.
 
+# Credits
+
+This repository is a fork maintained by [rom-weaver](https://github.com/rom-weaver), for use as a freely redistributable FDS BIOS in [EmulatorJS](https://github.com/EmulatorJS/EmulatorJS).
+
+- [James Athey](https://github.com/jamesathey) created FreeDiskSysROM and wrote the original BIOS, VRAM, and input routines: [jamesathey/FreeDiskSysROM](https://github.com/jamesathey/FreeDiskSysROM)
+- [yeah4578](https://github.com/yeah4578) (Nicholas Qualls) wrote the disk I/O routines and the boot screen: [yeah4578/FreeDiskSysROM](https://github.com/yeah4578/FreeDiskSysROM)
+- Changes made in this fork are listed in its git history.
+
 # Audience
 
 ## Emulators
@@ -108,6 +116,6 @@ Rules:
 
 # License
 
-FreeDiskSysROM is licensed under the GNU LGPL v3. The intent in using this license is to allow anyone to replace the 8 KiB official FDS BIOS with FreeDiskSysROM, whether for commerical or non-commercial purposes, so long as the source of FreeDiskSysROM (including any modifications) is made available to the end-user under the same license.
+FreeDiskSysROM is licensed under the GNU LGPL v3 (see `LICENSE`), which builds on the GNU GPL v3 (see `COPYING`). The intent in using this license is to allow anyone to replace the 8 KiB official FDS BIOS with FreeDiskSysROM, whether for commerical or non-commercial purposes, so long as the source of FreeDiskSysROM (including any modifications) is made available to the end-user under the same license.
 
 Although the Famicom does not have an OS or any concept of dynamic linking, the FDS BIOS is analogous to a system library in practice. FDS titles, FDS emulators, and FDS clone systems are all permitted to utilize FreeDiskSysROM without regard to or changes to the licenses of their own code.
