@@ -110,7 +110,7 @@ Also tested in the simulator: Akumajou Dracula, Ice Hockey, Zelda II, and Nazo n
 Every entry point is implemented and covered by the simulator tests below. Not yet done:
 
 - The license screen check. A free BIOS cannot contain Nintendo's license text, so disks boot without it.
-- Retrying a failed write a second time, as the original BIOS does.
+- Retrying a failed read or write, as the original BIOS does. A disk error is returned at once.
 - Testing against a broad library of commercial disks.
 
 # Building
