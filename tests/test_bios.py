@@ -212,7 +212,9 @@ class WriteTest(BiosTest):
         drive = m.fceumm or m
         self.assertEqual(set(drive.marks), {0x80}, "blocks must start with an $80 mark")
         if not m.fceumm:
-            self.assertGreaterEqual(m.crc_written, 2, "last block did not end with 2 CRC bytes")
+            # Byte events while sending the CRC: two start the CRC bytes, and a
+            # third finishes shifting out the second one.
+            self.assertGreaterEqual(m.crc_written, 3, "write mode ended before the CRC was out")
         self.assertNoOverruns(m)
 
         m.mem.write(0x0310, [0x07, 0xFF])

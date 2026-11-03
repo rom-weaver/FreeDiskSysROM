@@ -381,9 +381,13 @@ class Machine:
             self.overruns += 1
         if not self.fdsctrl & 0x04 and self.capture is not None:
             if self.fdsctrl & 0x10:
-                # Sending the CRC: no transfer flag or IRQ while it goes out.
+                # Sending the CRC. Some drives flag these bytes too, so raise
+                # the flag and the IRQ if it is enabled.
                 self.crc_written += 1
                 self.pending = False
+                self.byte_flag = True
+                if self.fdsctrl & 0x80:
+                    self.irq_line = True
                 return
             value = self.write_latch
             if self.mark_pending:

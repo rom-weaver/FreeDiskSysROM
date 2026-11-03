@@ -134,7 +134,7 @@ EJS_biosUrl = 'disksys.rom';
 
 Prebuilt `disksys.rom` files are attached to each CI run.
 
-To check a BIOS in an emulator, `python tests/make_demo_disk.py demo.fds` writes a small disk that prints `FREE BIOS OK` using BIOS routines.
+To check FreeDiskSysROM in an emulator, `python tests/make_demo_disk.py demo.fds` writes a small disk that prints `FREE BIOS OK` using BIOS routines. It has no license file, so the original BIOS refuses it with error $20.
 
 # Contributing
 
