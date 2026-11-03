@@ -1,3 +1,5 @@
 .vscode
 *.bin
 *.lst
+disksys.rom
+__pycache__/

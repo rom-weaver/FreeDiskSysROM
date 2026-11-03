@@ -4,6 +4,14 @@ This project has one goal - a compatible re-implementation of the Famicom Disk S
 
 FreeDiskSysROM aims to provide a replacement for the original FDS BIOS that can be freely redistributed and that is capable of running all published FDS software.
 
+# Credits
+
+This repository is a fork maintained by [rom-weaver](https://github.com/rom-weaver), for use as a freely redistributable FDS BIOS in [EmulatorJS](https://github.com/EmulatorJS/EmulatorJS).
+
+- [James Athey](https://github.com/jamesathey) created FreeDiskSysROM and wrote the original BIOS, VRAM, and input routines: [jamesathey/FreeDiskSysROM](https://github.com/jamesathey/FreeDiskSysROM)
+- [yeah4578](https://github.com/yeah4578) (Nicholas Qualls) wrote the disk I/O routines and the boot screen: [yeah4578/FreeDiskSysROM](https://github.com/yeah4578/FreeDiskSysROM)
+- Changes made in this fork are listed in its git history.
+
 # Audience
 
 ## Emulators
@@ -15,6 +23,16 @@ Famicom and NES emulators historically require a dump of the Famicom Disk System
 Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the entire Famicom Disk System also need a BIOS.
 
 # Status
+
+## Games
+
+Tested in EmulatorJS (FCEUmm core) with this BIOS:
+
+- The Legend of Zelda (Japan): boots, loads side B, and saves a new file to disk. The save survives a console reset.
+- Kid Icarus (Japan): boots, creates its save file on first start, and reaches the title screen.
+- Metroid, Galaga (Japan): boot to the title screen.
+
+Also tested in the simulator: Akumajou Dracula, Ice Hockey, Zelda II, and Nazo no Murasame Jou boot and load.
 
 ## APIs
 
@@ -31,35 +49,35 @@ Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the 
 | $e18b | NMI | | :white_check_mark: |
 | $e1b2 | VINTWait | | :white_check_mark: |
 | $e1c7 | IRQ | | :white_check_mark: |
-| $e1f8 | LoadFiles | | |
-| $e237 | AppendFile | | |
-| $e239 | WriteFile | | |
-| $e2b7 | CheckFileCount | | |
-| $e2bb | AdjustFileCount | | |
-| $e301 | SetFileCount1 | | |
-| $e305 | SetFileCount | | |
-| $e32a | GetDiskInfo | | |
-| $e3da | AddYtoPtr0A | | |
-| $e3e7 | GetHardCodedPointers | | |
-| $e3ea | GetHardCodedPointersWriteProtected | | |
-| $e445 | CheckDiskHeader | | |
-| $e484 | GetNumFiles | | |
-| $e492 | SetNumFiles | | |
-| $e4a0 | FileMatchTest | 0 | |
-| $e4da | SkipFiles | 0 | |
-| $e4f9 | LoadData | | |
-| $e506 | ReadData | | |
-| $e5b5 | SaveData | | |
-| $e64d | WaitForDriveReady | | |
-| $e685 | StopMotor | | |
-| $e68f | CheckBlockType | | |
-| $e6b0 | WriteBlockType | | |
-| $e6e3 | StartXfer | | |
-| $e706 | EndOfBlockRead | | |
-| $e729 | EndOfBlkWrite | | |
-| $e778 | XferDone | | |
-| $e794 | Xfer1stByte | | |
-| $e7a3 | XferByte | | |
+| $e1f8 | LoadFiles | | :white_check_mark: |
+| $e237 | AppendFile | | :white_check_mark: |
+| $e239 | WriteFile | | :white_check_mark: |
+| $e2b7 | CheckFileCount | | :white_check_mark: |
+| $e2bb | AdjustFileCount | | :white_check_mark: |
+| $e301 | SetFileCount1 | | :white_check_mark: |
+| $e305 | SetFileCount | | :white_check_mark: |
+| $e32a | GetDiskInfo | | :white_check_mark: |
+| $e3da | AddYtoPtr0A | | :white_check_mark: |
+| $e3e7 | GetHardCodedPointers | | :white_check_mark: |
+| $e3ea | GetHardCodedPointersWriteProtected | | :white_check_mark: |
+| $e445 | CheckDiskHeader | | :white_check_mark: |
+| $e484 | GetNumFiles | | :white_check_mark: |
+| $e492 | SetNumFiles | | :white_check_mark: |
+| $e4a0 | FileMatchTest | 0 | :white_check_mark: |
+| $e4da | SkipFiles | 0 | :white_check_mark: |
+| $e4f9 | LoadData | | :white_check_mark: |
+| $e506 | ReadData | | :white_check_mark: |
+| $e5b5 | SaveData | | :white_check_mark: |
+| $e64d | WaitForDriveReady | | :white_check_mark: |
+| $e685 | StopMotor | | :white_check_mark: |
+| $e68f | CheckBlockType | | :white_check_mark: |
+| $e6b0 | WriteBlockType | | :white_check_mark: |
+| $e6e3 | StartXfer | | :white_check_mark: |
+| $e706 | EndOfBlockRead | | :white_check_mark: |
+| $e729 | EndOfBlkWrite | | :white_check_mark: |
+| $e778 | XferDone | | :white_check_mark: |
+| $e794 | Xfer1stByte | | :white_check_mark: |
+| $e7a3 | XferByte | | :white_check_mark: |
 | $e7bb | VRAMStructWrite | | :white_check_mark: |
 | $e844 | FetchDirectPtr | | :white_check_mark: |
 | $e86a | WriteVRAMBuffers | | :white_check_mark: |
@@ -82,22 +100,51 @@ Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the 
 | $ead2 | MemFill | | :white_check_mark: |
 | $eaea | SetScroll | | :white_check_mark: |
 | $eafd | JumpEngine | | :white_check_mark: |
-| $eb13 | ReadKeyboard | 0 | |
+| $eb13 | ReadKeyboard | 0 | :white_check_mark: |
 | $ebaf | LoadTileset | | :white_check_mark: |
-| $ec22 | unk_EC22 | | |
-| $ee17 | StartMotor | | |
+| $ec22 | UploadObject | | :white_check_mark: |
+| $ee17 | StartMotor | | :white_check_mark: |
 
 ## Initialization
+
+Every entry point is implemented and covered by the simulator tests below. Not yet done:
+
+- The license screen check. A free BIOS cannot contain Nintendo's license text, so disks boot without it.
+- Retrying a failed read or write, as the original BIOS does. A disk error is returned at once.
+- Testing against a broad library of commercial disks.
 
 # Building
 
 To build, use [asm6f](https://github.com/freem/asm6f).
 
-```asm6f freedisksys.asm```
+```asm6f freedisksys.asm disksys.rom```
 
 The `-l` flag is very useful for development - it shows the addresses assigned
 to each instruction, so you can easily see how much room remains for a given
 subroutine.
+
+# Testing
+
+`tests/test_bios.py` runs the assembled ROM in a 6502 simulator ([py65](https://github.com/mnaberez/py65)) with a simulated PPU and FDS drive. It covers booting, soft reset, loading files to RAM and VRAM, writing and verifying files, file counts, disk info, error codes, the keyboard, the VRAM routines, and objects. The disk tests run twice: once against a drive that delivers a byte every 148 CPU cycles, as real hardware does, failing if the BIOS misses a byte; and once against a model of the FCEUmm core's drive, which EmulatorJS uses.
+
+```
+pip install py65
+python tests/test_bios.py disksys.rom
+```
+
+# Using with EmulatorJS
+
+EmulatorJS runs FDS games with its NES core and loads the BIOS from `EJS_biosUrl`:
+
+```js
+EJS_core = 'nes';
+EJS_gameUrl = 'game.fds';
+EJS_biosUrl = 'disksys.rom';
+```
+
+Prebuilt `disksys.rom` files are attached to each CI run.
+
+To check FreeDiskSysROM in an emulator, `python tests/make_demo_disk.py demo.fds` writes a small disk that prints `FREE BIOS OK` using BIOS routines. It has no license file, so the original BIOS refuses it with error $20.
 
 # Contributing
 
@@ -108,6 +155,6 @@ Rules:
 
 # License
 
-FreeDiskSysROM is licensed under the GNU LGPL v3. The intent in using this license is to allow anyone to replace the 8 KiB official FDS BIOS with FreeDiskSysROM, whether for commerical or non-commercial purposes, so long as the source of FreeDiskSysROM (including any modifications) is made available to the end-user under the same license.
+FreeDiskSysROM is licensed under the GNU LGPL v3 (see `LICENSE`), which builds on the GNU GPL v3 (see `COPYING`). The intent in using this license is to allow anyone to replace the 8 KiB official FDS BIOS with FreeDiskSysROM, whether for commerical or non-commercial purposes, so long as the source of FreeDiskSysROM (including any modifications) is made available to the end-user under the same license.
 
 Although the Famicom does not have an OS or any concept of dynamic linking, the FDS BIOS is analogous to a system library in practice. FDS titles, FDS emulators, and FDS clone systems are all permitted to utilize FreeDiskSysROM without regard to or changes to the licenses of their own code.

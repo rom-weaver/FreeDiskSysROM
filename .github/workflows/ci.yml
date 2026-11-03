@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build asm6f
+        run: |
+          git clone -q https://github.com/freem/asm6f "$RUNNER_TEMP/asm6f"
+          cc -O2 -o "$RUNNER_TEMP/asm6f/asm6f" "$RUNNER_TEMP/asm6f/asm6f.c"
+
+      - name: Assemble
+        run: "$RUNNER_TEMP/asm6f/asm6f freedisksys.asm disksys.rom"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test
+        run: |
+          pip install py65
+          python tests/test_bios.py disksys.rom -v
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: disksys.rom
+          path: disksys.rom

@@ -25,51 +25,17 @@
 ;   "background palette hack," which occurs whenever rendering is off and the
 ;   PPUADDR is somewhere in the palette. (FWIW, rendering is likely to be off
 ;   when this function is called.)
-;   To reliably prevent the palette from being drawn to the screen, what this
-;   implementation does instead is to check whether the address of just the
-;   last structure PLUS its length is in the $3F00-$3FFF area (or the mirror at
-;   $7F00-$7FFF).
+;   This implementation does the same.
 ; The third byte contains the length of the buffer.
 ; - There's no check for 0-length buffers. Specifying a length of 0 will cause
 ;   a buffer overflow.
 ; Before returning, the write buffer is cleared (0 written to $301, $80 written
 ; to $302.)
-; Affects: A, X, Y, $02, $03, $04, $301, $302
+; Games call this from NMI handlers, so it touches only the documented bytes.
+; Affects: A, X, Y, $FF, $301, $302
 API_ENTRYPOINT $e86a
 WriteVRAMBuffers:
-	LDA ZP_PPUCTRL
-	AND #%11111011 ; Address increment of 1
-	STA PPUCTRL
-	STA ZP_PPUCTRL
-	LDA PPUSTATUS ; clear PPUADDR latch
-	LDY #0 ; Start at the beginning of $302
-@structure:
-	LDA $302,Y  ; load high byte of destination PPU Address
-	BMI @done   ; an "opcode" of $80 or more marks the end of the list
-	STA $03     ; save the address (little endian) so we can check later for PPUADDR in the palette
-	STA PPUADDR ; set the high byte of the initial address
-	INY
-	LDA $302,Y  ; load low byte of destination PPU address
-	STA $02     ; save the low byte of the address (little endian)
-	STA PPUADDR ; set the low byte of the initial address
-	INY
-	LDX $302,Y  ; load buffer length from third byte
-	STX $04     ; save the length so we can check later for PPUADDR in the palette
-	INY
-@loop:
-	LDA $302,Y
-	STA PPUDATA
-	INY
-	DEX
-	BNE @loop
-	BEQ @structure ; this structure is done, so move onto the next one
-@done:
-	STA $302 ; write the $80 "opcode" to the first structure's address to clear the list
-	LDA #0   ; clear the write buffer, i.e., move the read buffer to the beginning
-	STA $301
-	; Finally, clear PPUADDR if it's currently in the palette
-	JSR PreventPalettePpuAddr
-	RTS
+	JMP WriteVRAMBuffersImpl
 
 ; Read individual bytes from VRAM to the VRAMBuffer. Each byte in the buffer is
 ; preceded by the source address - (1|32) in VRAM; in other words, it takes 3

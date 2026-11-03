@@ -73,8 +73,9 @@ GetHardCodedPointersImpl:
     iny
     lda ($03),y
     sta $01
-    inc $02
-    bne @endLoadPointers;if A was $ff
+    lda $02
+    eor #$ff ; unlike INC, this leaves A intact in $02 and keeps C
+    bne @endLoadPointers;if A was not $ff
     iny                 ;load 2 more bytes
     lda ($03),y
     sta $02
@@ -102,9 +103,13 @@ GetHardCodedPointersImpl:
     LDA DRIVESTATUS
     AND #%00000100 ; bit 2 contains the write-protect status
     BEQ @end
-    lda WRITE_PROTECTED
+    lda #WRITE_PROTECTED
 @error:
-    PLP;return to user program rather than function in case of error
-    PLP
+    ; return to user program rather than function in case of error. PLA, not
+    ; PLP, so the flags follow the error code and BNE sees the error.
+    TAX
+    PLA
+    PLA
+    TXA
 @end:
     RTS
