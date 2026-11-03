@@ -97,7 +97,7 @@ Write8XOR:
 ; non "data" bitplanes are replaced by dummy reads. Also, mode 3 ONLY works in
 ; write mode!
 ; Parameters: A = Low VRAM Address & Flags, Y = Hi VRAM Address, X = # of tiles to transfer to/from VRAM, Direct Pointer = CPU address
-; Affects: A, X, Y, $00, $01, $02, $03, $04, $05, $06
+; Affects: A, X, Y, $00, $01, $02, $03, $04, $FF
 API_ENTRYPOINT $ebaf
 LoadTileset:
     TOP PPUSTATUS ; clear PPU address latch
@@ -106,7 +106,7 @@ LoadTileset:
     AND #$F0
     STA PPUADDR   ; set low byte of VRAM address
     STX $03       ; store length
-    JSR FetchDirectPtr
+    JSR FetchPtr00 ; FetchDirectPtr would touch $05-$06
 
     LDA ZP_PPUCTRL
     AND #%11111011 ; set increment mode to 1
