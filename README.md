@@ -24,6 +24,16 @@ Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the 
 
 # Status
 
+## Games
+
+Tested in EmulatorJS (FCEUmm core) with this BIOS:
+
+- The Legend of Zelda (Japan): boots, loads side B, and saves a new file to disk. The save survives a console reset.
+- Kid Icarus (Japan): boots, creates its save file on first start, and reaches the title screen.
+- Metroid, Galaga (Japan): boot to the title screen.
+
+Also tested in the simulator: Akumajou Dracula, Ice Hockey, Zelda II, and Nazo no Murasame Jou boot and load.
+
 ## APIs
 
 | Address | Name | # of Games | Implemented |
@@ -115,7 +125,7 @@ subroutine.
 
 # Testing
 
-`tests/test_bios.py` runs the assembled ROM in a 6502 simulator ([py65](https://github.com/mnaberez/py65)) with a simulated PPU and FDS drive. It covers booting, soft reset, loading files to RAM and VRAM, writing and verifying files, file counts, disk info, error codes, the keyboard, and objects. The disk tests run twice: once against a drive that delivers a byte every 148 CPU cycles, as real hardware does, failing if the BIOS misses a byte; and once against a model of the FCEUmm core's drive, which EmulatorJS uses.
+`tests/test_bios.py` runs the assembled ROM in a 6502 simulator ([py65](https://github.com/mnaberez/py65)) with a simulated PPU and FDS drive. It covers booting, soft reset, loading files to RAM and VRAM, writing and verifying files, file counts, disk info, error codes, the keyboard, the VRAM routines, and objects. The disk tests run twice: once against a drive that delivers a byte every 148 CPU cycles, as real hardware does, failing if the BIOS misses a byte; and once against a model of the FCEUmm core's drive, which EmulatorJS uses.
 
 ```
 pip install py65
