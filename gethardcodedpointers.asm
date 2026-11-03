@@ -105,7 +105,11 @@ GetHardCodedPointersImpl:
     BEQ @end
     lda #WRITE_PROTECTED
 @error:
-    PLP;return to user program rather than function in case of error
-    PLP
+    ; return to user program rather than function in case of error. PLA, not
+    ; PLP, so the flags follow the error code and BNE sees the error.
+    TAX
+    PLA
+    PLA
+    TXA
 @end:
     RTS

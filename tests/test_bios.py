@@ -63,6 +63,9 @@ class BiosTest(unittest.TestCase):
         m.mem.write(address, DISK_ID)
         return address
 
+    def assertErrorFlags(self, m):
+        self.assertFalse(m.mpu.p & m.mpu.ZERO, "Z set on an error, so BNE misses it")
+
     def assertNoOverruns(self, m):
         self.assertEqual(m.overruns, 0, "BIOS missed disk bytes")
 
@@ -140,6 +143,7 @@ class LoadFilesTest(BiosTest):
         m.mem.write(0x0310, [0x05, 0xFF])
         a, _, _ = m.call(LOAD_FILES, params=[disk_id, 0x0310])
         self.assertEqual(a, 0x01)
+        self.assertErrorFlags(m)
 
     def test_wrong_maker_id(self):
         m = self.machine()
@@ -255,6 +259,7 @@ class WriteTest(BiosTest):
         self.header(m)
         a, _, _ = m.call(APPEND_FILE, params=[disk_id, 0x0320])
         self.assertEqual(a, 0x03)
+        self.assertErrorFlags(m)
         self.assertEqual(m.file_count(), 4)
 
 
