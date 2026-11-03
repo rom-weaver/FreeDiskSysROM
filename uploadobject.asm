@@ -104,6 +104,7 @@ UploadObject:
 	LDY #OBJ_TILES
 	LDA ($00),y
 	STA $06
+	STA $0B ; the unadjusted high byte picks tile IDs or a tile list
 	INY
 	LDA ($00),y
 	STA $05
@@ -164,7 +165,7 @@ UploadObject:
 	ADC ($00),y
 	STA $0200,x
 	; tile ID
-	LDA $06
+	LDA $0B
 	BNE @tileFromList
 	LDA $05
 	CLC
