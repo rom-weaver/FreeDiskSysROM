@@ -434,7 +434,7 @@ SetNumFiles:
 	LDA #$02
 	JSR WriteBlockType
 	PLA
-	JSR XferByte
+	JSR Xfer1stByte ; writes rewrite $4025 for every byte, which FCEUmm needs
 	JSR EndOfBlkWrite
 	RTS
 
@@ -687,15 +687,15 @@ WriteBlockType:
 	STA FDSCTRL
 	LDY #$0a
 	JSR Delayms;wait 10ms to make lots of space between the files
-	LDA #$80
-	STA WRITEDATA;write the wake-up bit
+	STY WRITEDATA;Y is 0 after Delayms, so the gap stays zeros
 	LDA ZP_FDSCTRL
 	ORA #$40
 	STA ZP_FDSCTRL
 	STA FDSCTRL
+	LDA #$80
+	JSR Xfer1stByte;the start mark that ends the gap
 	PLA
-	JSR Xfer1stByte
-	RTS
+	JMP Xfer1stByte
 
 
 
@@ -746,9 +746,8 @@ EndOfBlkWrite:
 	LDA ZP_FDSCTRL
 	ORA #$10 ; transfer the CRC
 	STA ZP_FDSCTRL
-	STA FDSCTRL
-	JSR XferByte ; two CRC bytes
-	JSR XferByte
+	JSR Xfer1stByte ; two CRC bytes
+	JSR Xfer1stByte
 	LDA DRIVESTATUS
 	AND #$02
 	BEQ @ok
@@ -989,14 +988,15 @@ ErrorUnwind:
 	JMP EndRead
 
 ; Writes A to the disk, or reads a byte and compares it to A, depending on $09.
-; The block must already be started, so XferByte is fast enough here.
+; Writes go through Xfer1stByte because FCEUmm only signals the next byte to
+; write after a $4025 write. Reads use the faster XferByte.
 ; Parameters: A = byte, $09 = $00 to write, $ff to verify
 ; Returns: on a mismatch, exits through ErrorOccurred with error $26
 ; Affects: A, $08
 XferOrVerify:
 	BIT $09
 	BMI @verify
-	JMP XferByte
+	JMP Xfer1stByte
 @verify:
 	STA $08
 	JSR XferByte
