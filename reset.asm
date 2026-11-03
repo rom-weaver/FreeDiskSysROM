@@ -234,7 +234,9 @@ BootList:
 ; Start the game with NMIs on, as some games expect, but just after a vblank,
 ; so the game gets a whole frame to set itself up before its first NMI.
 HandOffPpu:
+    PHP ; VINTWait returns with IRQs masked; keep the caller's I flag
     JSR VINTWait
+    PLP
     LDA PPUSTATUS ; clear the vblank flag so enabling NMIs doesn't fire one now
     LDA #$80
     STA ZP_PPUCTRL
