@@ -57,8 +57,126 @@ def build_disk(disk_id, boot_id, files):
     return blocks
 
 
+SIDE_SIZE = 65500
+DSK_INIT, DSK_VOLUME, DSK_FILECNT, DSK_FILEHDR, DSK_FILEDATA = range(5)
+
+
+def flatten(blocks):
+    side = [b for block in blocks for b in block]
+    return side + [0] * (SIDE_SIZE - len(side))
+
+
+def unflatten(side):
+    """Splits a flat disk side back into blocks, using the block lengths."""
+    blocks = [side[0:56], side[56:58]]
+    pos = 58
+    for _ in range(side[57]):
+        header = side[pos:pos + 16]
+        size = header[13] | (header[14] << 8)
+        blocks.append(header)
+        blocks.append(side[pos + 16:pos + 17 + size])
+        pos += 17 + size
+    return blocks
+
+
+class FceummDrive:
+    """Models the FDS drive the way the FCEUmm core (used by EmulatorJS)
+    does in src/fds.c: blocks follow a fixed order with fixed lengths, a byte
+    becomes ready 150 cycles after the last $4031 read or $4025 write, and the
+    first $4024 write after a block starts is taken as the start mark."""
+
+    def __init__(self, machine, blocks):
+        self.m = machine
+        self.disk = flatten(blocks)
+        self.control = 0
+        self.block = DSK_INIT
+        self.start = 0
+        self.length = 0
+        self.addr = 0
+        self.filesize = 0
+        self.access = 0
+        self.seek = 0
+        self.irq = False
+        self.marks = []
+
+    def write(self, addr, value):
+        if addr == 0x4024 and self.m.inserted and not self.control & 0x04:
+            if self.access == 0:
+                self.access = 1
+                self.marks.append(value)
+            elif self.addr < self.length:
+                self.disk[self.start + self.addr] = value
+                if self.block == DSK_FILEHDR and self.addr in (13, 14):
+                    self._filesize(value)
+                self.addr += 1
+        elif addr == 0x4025:
+            self.irq = False
+            if self.m.inserted:
+                if value & 0x40 and not self.control & 0x40:
+                    self.access = 0
+                    self.seek = 150
+                    self.start += self.addr
+                    self.addr = 0
+                    self.block += 1
+                    if self.block > DSK_FILEDATA:
+                        self.block = DSK_FILEHDR
+                    self.length = {DSK_VOLUME: 0x38, DSK_FILECNT: 2, DSK_FILEHDR: 0x10,
+                                   DSK_FILEDATA: 1 + self.filesize}[self.block]
+                if value & 0x02:
+                    self.block = DSK_INIT
+                    self.start = self.length = self.addr = 0
+                    self.seek = 150
+                if value & 0x40:
+                    self.seek = 150
+            self.control = value
+        return value
+
+    def _filesize(self, value):
+        if self.addr == 13:
+            self.filesize = value
+        else:
+            self.filesize |= value << 8
+
+    def read(self, addr):
+        if addr == 0x4030:
+            value = 0x02 if self.irq else 0
+            self.irq = False
+            return value
+        if addr == 0x4031:
+            value = 0xFF
+            if self.m.inserted and self.control & 0x04:
+                self.access = 1
+                value = 0
+                if self.addr < self.length:
+                    value = self.disk[self.start + self.addr]
+                    if self.block == DSK_FILEHDR and self.addr in (13, 14):
+                        self._filesize(value)
+                    self.addr += 1
+                self.seek = 150
+                self.irq = False
+            return value
+        if addr == 0x4032:
+            value = 0x40
+            if not self.m.inserted:
+                value |= 0x05
+            if not self.m.inserted or not self.control & 1 or self.control & 2:
+                value |= 0x02
+            if self.m.write_protected:
+                value |= 0x04
+            return value
+        if addr == 0x4033:
+            return 0x80
+        return 0
+
+    def tick(self, cycles):
+        if self.seek > 0:
+            self.seek -= cycles
+            if self.seek <= 0 and self.control & 0x80:
+                self.irq = True
+
+
 class Machine:
-    def __init__(self, rom, blocks=None, inserted=True, write_protected=False):
+    def __init__(self, rom, blocks=None, inserted=True, write_protected=False, drive="exact"):
         self.mem = ObservableMemory()
         self.mem.write(0xE000, list(rom))
         # register mirrors and vector flags as left by the BIOS boot
@@ -91,6 +209,8 @@ class Machine:
         self.data = 0
         self.next_byte = None
         self.overruns = 0
+        self.marks = []
+        self.mark_pending = False
         self.pending = False  # a byte arrived and was not yet read or written
         self.irq_line = False
 
@@ -98,8 +218,14 @@ class Machine:
         m.subscribe_to_write(range(0xE000, 0x10000), lambda a, v: m._subject[a])
         m.subscribe_to_write(range(0x2000, 0x2008), self._ppu_write)
         m.subscribe_to_read(range(0x2000, 0x2008), self._ppu_read)
-        m.subscribe_to_write(range(0x4020, 0x4027), self._fds_write)
-        m.subscribe_to_read(range(0x4030, 0x4034), self._fds_read)
+        self.fceumm = FceummDrive(self, self.blocks) if drive == "fceumm" else None
+        if self.fceumm:
+            m.subscribe_to_write(range(0x4020, 0x4027), self.fceumm.write)
+            m.subscribe_to_read(range(0x4030, 0x4034), self.fceumm.read)
+        else:
+            m.subscribe_to_write(range(0x4020, 0x4027), self._fds_write)
+            m.subscribe_to_read(range(0x4030, 0x4034), self._fds_read)
+        self.last_cycles = 0
         m.subscribe_to_read([0x4016, 0x4017], self._pad_read)
         m.subscribe_to_write([0x4016], self._pad_write)
         self.kb_row = 0
@@ -174,7 +300,12 @@ class Machine:
             self._ack()
             self.pending = False
             if self.capture is not None and not self.fdsctrl & 0x10:
-                self.capture.append(value)
+                if self.mark_pending:
+                    # The first byte of a written block is the start mark.
+                    self.marks.append(value)
+                    self.mark_pending = False
+                else:
+                    self.capture.append(value)
         elif addr == 0x4025:
             old = self.fdsctrl
             self.fdsctrl = value
@@ -197,6 +328,7 @@ class Machine:
             self.capture = None
         else:
             self.capture = []
+            self.mark_pending = True
         self.next_byte = self.mpu.processorCycles + BYTE_CYCLES
         self.pending = False
 
@@ -280,11 +412,17 @@ class Machine:
             self.vblank = True
             if self.ppuctrl & 0x80:
                 self.nmi_pending = True
-        self._tick_drive()
+        if self.fceumm:
+            self.fceumm.tick(mpu.processorCycles - self.last_cycles)
+            self.last_cycles = mpu.processorCycles
+            irq = self.fceumm.irq
+        else:
+            self._tick_drive()
+            irq = self.irq_line
         if self.nmi_pending:
             self.nmi_pending = False
             mpu.nmi()
-        elif self.irq_line and not mpu.p & mpu.INTERRUPT:
+        elif irq and not mpu.p & mpu.INTERRUPT:
             mpu.irq()
 
     def run_until(self, pc, max_cycles=40_000_000):
@@ -316,5 +454,8 @@ class Machine:
         self.run_until(end, max_cycles)
         return mpu.a, mpu.x, mpu.y
 
+    def disk_blocks(self):
+        return unflatten(self.fceumm.disk) if self.fceumm else self.blocks
+
     def file_count(self):
-        return self.blocks[1][1]
+        return self.disk_blocks()[1][1]

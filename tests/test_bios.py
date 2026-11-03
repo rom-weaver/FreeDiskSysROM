@@ -52,8 +52,11 @@ class BiosTest(unittest.TestCase):
             cls.rom = f.read()
         assert len(cls.rom) == 8192, "ROM must be 8 KiB"
 
+    DRIVE = "exact"
+
     def machine(self, **kwargs):
         kwargs.setdefault("blocks", disk())
+        kwargs.setdefault("drive", self.DRIVE)
         return Machine(self.rom, **kwargs)
 
     def write_disk_id(self, m, address=0x0300):
@@ -85,6 +88,20 @@ class BootTest(BiosTest):
         m.reset()
         m.run_until(GAME_LOOP, max_cycles=200_000)
         self.assertEqual(m.mem[0x0103], 0x53)
+
+
+class DemoDiskTest(BiosTest):
+    def test_demo_disk_prints_message(self):
+        import make_demo_disk as demo
+        blocks = build_disk(demo.DISK_ID, 1, [
+            dict(id=0, name=b"DEMOPRG-", addr=0x6000, data=demo.CODE),
+            dict(id=1, name=b"VECTORS-", addr=0xDFF6, data=demo.VECTORS),
+        ])
+        m = self.machine(blocks=blocks)
+        m.reset()
+        m.run_until(0x600B)
+        m.run_until(0x6014)
+        self.assertEqual(m.vram[0x21CA:0x21CA + len(demo.MESSAGE)], demo.MESSAGE)
 
 
 class LoadFilesTest(BiosTest):
@@ -151,7 +168,7 @@ class LargeFileTest(BiosTest):
         m.mem.write(0x0320, header)
         a, _, _ = m.call(APPEND_FILE, params=[disk_id, 0x0320])
         self.assertEqual(a, 0)
-        self.assertEqual(m.blocks[11], [0x04] + data)
+        self.assertEqual(m.disk_blocks()[11], [0x04] + data)
         self.assertNoOverruns(m)
 
 
@@ -190,8 +207,10 @@ class WriteTest(BiosTest):
         a, _, _ = m.call(APPEND_FILE, params=[disk_id, 0x0320])
         self.assertEqual(a, 0)
         self.assertEqual(m.file_count(), 5)
-        self.assertEqual(m.blocks[10][0:3], [0x03, 4, 7])
-        self.assertEqual(m.blocks[11], [0x04] + data)
+        self.assertEqual(m.disk_blocks()[10][0:3], [0x03, 4, 7])
+        self.assertEqual(m.disk_blocks()[11], [0x04] + data)
+        drive = m.fceumm or m
+        self.assertEqual(set(drive.marks), {0x80}, "blocks must start with an $80 mark")
         self.assertNoOverruns(m)
 
         m.mem.write(0x0310, [0x07, 0xFF])
@@ -206,7 +225,7 @@ class WriteTest(BiosTest):
         a, _, _ = m.call(WRITE_FILE, a=1, params=[disk_id, 0x0320])
         self.assertEqual(a, 0)
         self.assertEqual(m.file_count(), 2)
-        self.assertEqual(m.blocks[5], [0x04] + data)
+        self.assertEqual(m.disk_blocks()[5], [0x04] + data)
 
     def test_write_protected(self):
         m = self.machine(write_protected=True)
@@ -298,6 +317,14 @@ class UploadObjectTest(BiosTest):
         self.obj(m, render=0x80)
         m.call(UPLOAD_OBJECT)
         self.assertEqual([s[0] for s in self.sprites(m)], [0xFF] * 4)
+
+
+# FCEUmm, the NES core EmulatorJS uses, models the drive differently, so the
+# disk tests run against its model too.
+for _cls in (BootTest, DemoDiskTest, LoadFilesTest, LargeFileTest, GetDiskInfoTest,
+             WriteTest, FileCountTest):
+    _name = "Fceumm" + _cls.__name__
+    globals()[_name] = type(_name, (_cls,), {"DRIVE": "fceumm"})
 
 
 if __name__ == "__main__":
