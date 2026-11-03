@@ -39,35 +39,35 @@ Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the 
 | $e18b | NMI | | :white_check_mark: |
 | $e1b2 | VINTWait | | :white_check_mark: |
 | $e1c7 | IRQ | | :white_check_mark: |
-| $e1f8 | LoadFiles | | |
-| $e237 | AppendFile | | |
-| $e239 | WriteFile | | |
-| $e2b7 | CheckFileCount | | |
-| $e2bb | AdjustFileCount | | |
-| $e301 | SetFileCount1 | | |
-| $e305 | SetFileCount | | |
-| $e32a | GetDiskInfo | | |
-| $e3da | AddYtoPtr0A | | |
-| $e3e7 | GetHardCodedPointers | | |
-| $e3ea | GetHardCodedPointersWriteProtected | | |
-| $e445 | CheckDiskHeader | | |
-| $e484 | GetNumFiles | | |
-| $e492 | SetNumFiles | | |
-| $e4a0 | FileMatchTest | 0 | |
-| $e4da | SkipFiles | 0 | |
-| $e4f9 | LoadData | | |
-| $e506 | ReadData | | |
-| $e5b5 | SaveData | | |
-| $e64d | WaitForDriveReady | | |
-| $e685 | StopMotor | | |
-| $e68f | CheckBlockType | | |
-| $e6b0 | WriteBlockType | | |
-| $e6e3 | StartXfer | | |
-| $e706 | EndOfBlockRead | | |
-| $e729 | EndOfBlkWrite | | |
-| $e778 | XferDone | | |
-| $e794 | Xfer1stByte | | |
-| $e7a3 | XferByte | | |
+| $e1f8 | LoadFiles | | :white_check_mark: |
+| $e237 | AppendFile | | :white_check_mark: |
+| $e239 | WriteFile | | :white_check_mark: |
+| $e2b7 | CheckFileCount | | :white_check_mark: |
+| $e2bb | AdjustFileCount | | :white_check_mark: |
+| $e301 | SetFileCount1 | | :white_check_mark: |
+| $e305 | SetFileCount | | :white_check_mark: |
+| $e32a | GetDiskInfo | | :white_check_mark: |
+| $e3da | AddYtoPtr0A | | :white_check_mark: |
+| $e3e7 | GetHardCodedPointers | | :white_check_mark: |
+| $e3ea | GetHardCodedPointersWriteProtected | | :white_check_mark: |
+| $e445 | CheckDiskHeader | | :white_check_mark: |
+| $e484 | GetNumFiles | | :white_check_mark: |
+| $e492 | SetNumFiles | | :white_check_mark: |
+| $e4a0 | FileMatchTest | 0 | :white_check_mark: |
+| $e4da | SkipFiles | 0 | :white_check_mark: |
+| $e4f9 | LoadData | | :white_check_mark: |
+| $e506 | ReadData | | :white_check_mark: |
+| $e5b5 | SaveData | | :white_check_mark: |
+| $e64d | WaitForDriveReady | | :white_check_mark: |
+| $e685 | StopMotor | | :white_check_mark: |
+| $e68f | CheckBlockType | | :white_check_mark: |
+| $e6b0 | WriteBlockType | | :white_check_mark: |
+| $e6e3 | StartXfer | | :white_check_mark: |
+| $e706 | EndOfBlockRead | | :white_check_mark: |
+| $e729 | EndOfBlkWrite | | :white_check_mark: |
+| $e778 | XferDone | | :white_check_mark: |
+| $e794 | Xfer1stByte | | :white_check_mark: |
+| $e7a3 | XferByte | | :white_check_mark: |
 | $e7bb | VRAMStructWrite | | :white_check_mark: |
 | $e844 | FetchDirectPtr | | :white_check_mark: |
 | $e86a | WriteVRAMBuffers | | :white_check_mark: |
@@ -90,22 +90,51 @@ Modern hardware clones of the FDS RAM Adapter or FPGA re-implementations of the 
 | $ead2 | MemFill | | :white_check_mark: |
 | $eaea | SetScroll | | :white_check_mark: |
 | $eafd | JumpEngine | | :white_check_mark: |
-| $eb13 | ReadKeyboard | 0 | |
+| $eb13 | ReadKeyboard | 0 | :white_check_mark: |
 | $ebaf | LoadTileset | | :white_check_mark: |
-| $ec22 | unk_EC22 | | |
-| $ee17 | StartMotor | | |
+| $ec22 | UploadObject | | :white_check_mark: |
+| $ee17 | StartMotor | | :white_check_mark: |
 
 ## Initialization
+
+Every entry point is implemented and covered by the simulator tests below. Not yet done:
+
+- The license screen check. A free BIOS cannot contain Nintendo's license text, so disks boot without it.
+- Retrying a failed write a second time, as the original BIOS does.
+- Testing against a broad library of commercial disks.
 
 # Building
 
 To build, use [asm6f](https://github.com/freem/asm6f).
 
-```asm6f freedisksys.asm```
+```asm6f freedisksys.asm disksys.rom```
 
 The `-l` flag is very useful for development - it shows the addresses assigned
 to each instruction, so you can easily see how much room remains for a given
 subroutine.
+
+# Testing
+
+`tests/test_bios.py` runs the assembled ROM in a 6502 simulator ([py65](https://github.com/mnaberez/py65)) with a simulated PPU and FDS drive. It covers booting, soft reset, loading files to RAM and VRAM, writing and verifying files, file counts, disk info, error codes, the keyboard, and objects. The disk tests run twice: once against a drive that delivers a byte every 148 CPU cycles, as real hardware does, failing if the BIOS misses a byte; and once against a model of the FCEUmm core's drive, which EmulatorJS uses.
+
+```
+pip install py65
+python tests/test_bios.py disksys.rom
+```
+
+# Using with EmulatorJS
+
+EmulatorJS runs FDS games with its NES core and loads the BIOS from `EJS_biosUrl`:
+
+```js
+EJS_core = 'nes';
+EJS_gameUrl = 'game.fds';
+EJS_biosUrl = 'disksys.rom';
+```
+
+Prebuilt `disksys.rom` files are attached to each CI run.
+
+To check a BIOS in an emulator, `python tests/make_demo_disk.py demo.fds` writes a small disk that prints `FREE BIOS OK` using BIOS routines.
 
 # Contributing
 
