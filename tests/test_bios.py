@@ -211,6 +211,8 @@ class WriteTest(BiosTest):
         self.assertEqual(m.disk_blocks()[11], [0x04] + data)
         drive = m.fceumm or m
         self.assertEqual(set(drive.marks), {0x80}, "blocks must start with an $80 mark")
+        if not m.fceumm:
+            self.assertGreaterEqual(m.crc_written, 2, "last block did not end with 2 CRC bytes")
         self.assertNoOverruns(m)
 
         m.mem.write(0x0310, [0x07, 0xFF])
@@ -311,6 +313,14 @@ class UploadObjectTest(BiosTest):
         self.obj(m, flags=0x10)
         m.call(UPLOAD_OBJECT)
         self.assertEqual(self.sprites(m)[0], [0x20, 0x14, 0x42, 0x38])
+
+    def test_frame_offset_stays_in_tile_ids(self):
+        # base tile $F0 plus frame 4 * 4 tiles wraps to $00, not a tile list at $0100
+        m = self.machine()
+        self.obj(m)
+        m.mem.write(0x0345, [4, 0x00, 0xF0])
+        m.call(UPLOAD_OBJECT)
+        self.assertEqual([s[1] for s in self.sprites(m)], [0x00, 0x01, 0x02, 0x03])
 
     def test_hide(self):
         m = self.machine()

@@ -211,6 +211,8 @@ class Machine:
         self.overruns = 0
         self.marks = []
         self.mark_pending = False
+        self.write_latch = 0
+        self.crc_written = 0
         self.pending = False  # a byte arrived and was not yet read or written
         self.irq_line = False
 
@@ -299,13 +301,8 @@ class Machine:
         if addr == 0x4024:
             self._ack()
             self.pending = False
-            if self.capture is not None and not self.fdsctrl & 0x10:
-                if self.mark_pending:
-                    # The first byte of a written block is the start mark.
-                    self.marks.append(value)
-                    self.mark_pending = False
-                else:
-                    self.capture.append(value)
+            # The drive shifts this byte out at the next byte event.
+            self.write_latch = value
         elif addr == 0x4025:
             old = self.fdsctrl
             self.fdsctrl = value
@@ -329,6 +326,7 @@ class Machine:
         else:
             self.capture = []
             self.mark_pending = True
+            self.crc_written = 0
         self.next_byte = self.mpu.processorCycles + BYTE_CYCLES
         self.pending = False
 
@@ -381,6 +379,20 @@ class Machine:
         self.next_byte += BYTE_CYCLES
         if self.pending and not self.fdsctrl & 0x10:
             self.overruns += 1
+        if not self.fdsctrl & 0x04 and self.capture is not None:
+            if self.fdsctrl & 0x10:
+                # Sending the CRC: no transfer flag or IRQ while it goes out.
+                self.crc_written += 1
+                self.pending = False
+                return
+            value = self.write_latch
+            if self.mark_pending:
+                # Zeros form the gap; the $80 start mark begins the block.
+                if value:
+                    self.marks.append(value)
+                    self.mark_pending = False
+            else:
+                self.capture.append(value)
         self.pending = True
         if self.fdsctrl & 0x04:
             if self.stream_pos < len(self.stream):

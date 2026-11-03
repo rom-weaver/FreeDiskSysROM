@@ -1,5 +1,6 @@
-"""Writes a one-side .fds demo disk that boots with any FDS BIOS and prints
-"FREE BIOS OK" through BIOS routines. Use it to check a BIOS in an emulator.
+"""Writes a one-side .fds demo disk that prints "FREE BIOS OK" through BIOS
+routines. Use it to check FreeDiskSysROM in an emulator. It has no license
+file, so the original BIOS refuses it with error $20.
 
 Usage: python tests/make_demo_disk.py demo.fds
 """
