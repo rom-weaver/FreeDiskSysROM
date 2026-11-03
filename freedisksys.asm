@@ -146,9 +146,8 @@ AppendFile:
 
 ; Same as "Append File", but instead of writing the file to the end of the
 ; disk, A specifies the sequential position on the disk to write the file (0
-; is the first). This also has the effect of setting the disk's file count to
-; the A value, therefore logically hiding any other files that may reside after
-; the written one.
+; is the first). The disk's file count becomes A + 1, so the written file stays
+; visible and any files after it are hidden.
 ; Parameters: Pointer to Disk ID, Pointer to File Header, A = file #
 ; Returns: A = error #
 API_ENTRYPOINT $e239
@@ -613,20 +612,35 @@ SaveData:
 	STA PPUADDR
 	LDA PPUDATA ; VRAM reads are buffered, so discard the first one
 @begin:
-	JSR DecPtr0C ; the loop ends when the size underflows
-	BCC @end
+	; This loop is inlined because a byte arrives about every 148 cycles.
 @dataLoop:
-	LDY #$00
+	LDA $0c ; bytes left
+	ORA $0d
+	BEQ @end
 	LDA $0e
-	BEQ @RAMSource
-	LDA PPUDATA
-	JMP @xfer
-@RAMSource:
+	BNE @VRAMSource
+	LDY #$00
 	LDA ($0a),y
+	INC $0a
+	BNE @xfer
+	INC $0b
+	JMP @xfer
+@VRAMSource:
+	LDA PPUDATA
 @xfer:
+	BIT $09
+	BMI @verify
+	JSR Xfer1stByte
+	JMP @next
+@verify:
 	JSR XferOrVerify
-	JSR Inc0ADec0C
-	BCS @dataLoop
+@next:
+	LDA $0c
+	BNE +
+	DEC $0d
++:
+	DEC $0c
+	JMP @dataLoop
 @end:
 	JMP EndOfBlockXfer
 
@@ -743,11 +757,18 @@ EndOfBlockRead:
 ; Returns: on a full disk, exits through ErrorOccurred with error $30
 API_ENTRYPOINT $e729
 EndOfBlkWrite:
+	; A byte written to $4024 goes out at the next byte event, so wait for one
+	; more event before switching to CRC, or the block loses its last byte.
+	JSR Xfer1stByte
 	LDA ZP_FDSCTRL
 	ORA #$10 ; transfer the CRC
 	STA ZP_FDSCTRL
-	JSR Xfer1stByte ; two CRC bytes
-	JSR Xfer1stByte
+	STA FDSCTRL
+	; The drive raises no transfer IRQs while it sends the two CRC bytes
+	; (about 300 cycles), so wait them out.
+	JSR Delay131
+	JSR Delay131
+	JSR Delay131
 	LDA DRIVESTATUS
 	AND #$02
 	BEQ @ok
