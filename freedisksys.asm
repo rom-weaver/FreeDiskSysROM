@@ -117,6 +117,8 @@ LoadFiles:
 	PHA
 	JSR CheckDiskHeader
 	JSR GetNumFiles
+	LDA $06
+	BEQ @done ; a disk with no files would otherwise loop 256 times
 @FileLoop:
 	LDA #$03
 	JSR CheckBlockType
@@ -124,8 +126,10 @@ LoadFiles:
 	JSR LoadData
 	DEC $06
 	BNE @FileLoop
+@done:
 	PLA
 	STA $101
+	LDY $0e ; number of files loaded
 	JSR XferDone
 	RTS
 
@@ -151,7 +155,7 @@ API_ENTRYPOINT $e239
 WriteFile:
 	STA $05
 	LDA #$ff
-	JSR GetHardCodedPointers
+	JSR GetHardCodedPointersWriteProtected
 	LDA $101
 	PHA
 
@@ -159,43 +163,36 @@ WriteFile:
 	JSR GetNumFiles
 	LDA $05
 	CMP #$ff
-	BEQ @WdoneNumFiles
+	BNE @haveFileNum
+	LDA $06 ; appending, so the new file goes after the last one
+	STA $05
+@haveFileNum:
 	STA $06
-@WdoneNumFiles:
 	JSR SkipFiles
 	LDA #$03
 	JSR WriteBlockType
 	LDA #$00
 	JSR SaveData;write the file to disk
-	JSR XferDone
 
 	JSR CheckDiskHeader;verify write pass
 	JSR GetNumFiles
 	LDA $05
-	CMP #$ff
-	BNE @VstoreNum
-	LDA $06
-	STA $05
-	INC $05
-@VstoreNum:
 	STA $06
-@VdoneNumFiles:
 	JSR SkipFiles
 	LDA #$03
 	JSR CheckBlockType
 	LDA #$FF
-	JSR SaveData;verify written data
-	BNE @end;if verification fails, return without updating file count
-	JSR XferDone
+	JSR SaveData;verify written data. A mismatch exits with error $26.
 
+	; The written file stays visible and any files after it are hidden.
 	JSR CheckDiskHeader;adjust file count pass
-	LDA $05
+	LDX $05
+	INX
+	TXA
 	JSR SetNumFiles
-	JSR XferDone
-@end:
 	PLA
 	STA $101
-	JSR XferDone
+	LDA #OK
 	RTS
 
 ; Reads in disk's file count, compares it to A, then sets the disk's file count
@@ -204,7 +201,9 @@ WriteFile:
 ; Returns: A = error #
 API_ENTRYPOINT $e2b7
 CheckFileCount:
-	RTS
+	LDX #$ff
+	NOP
+	DB $2C ; BIT abs: skip the LDX #$00 of AdjustFileCount
 
 ; Reads in disk's file count, decrements it by A, then writes the new value
 ; back.
@@ -212,6 +211,30 @@ CheckFileCount:
 ; Returns: A = error #
 API_ENTRYPOINT $e2bb
 AdjustFileCount:
+	LDX #$00
+	STX $09 ; $ff = CheckFileCount, $00 = AdjustFileCount
+	JSR GetHardCodedPointersWriteProtected ; A goes to $02
+	LDA $101
+	PHA
+	JSR CheckDiskHeader
+	JSR GetNumFiles
+	LDA $06
+	CMP $02
+	BCS @inRange
+	LDA #$31 ; A is greater than the file count
+	JMP ErrorOccurred
+@inRange:
+	BIT $09
+	BMI @setCount
+	SBC $02 ; carry is still set from the CMP
+	STA $02
+@setCount:
+	JSR CheckDiskHeader
+	LDA $02
+	JSR SetNumFiles
+	PLA
+	STA $101
+	LDA #OK
 	RTS
 
 ; Set the file count to A + 1
@@ -229,22 +252,124 @@ SetFileCount1:
 ; Returns: A = error #
 API_ENTRYPOINT $e305
 SetFileCount:
-	tax
-	lda #$00
-	jsr GetHardCodedPointers;get a single pointer (disk ID)
-	jsr CheckDiskHeader;read disk header, the data we want is in block 2
-
+	JSR GetHardCodedPointersWriteProtected ; single pointer (disk ID), A goes to $02
+	LDA $101
+	PHA
+	JSR CheckDiskHeader ; leaves the disk at block 2, the file count
+	LDA $02
+	JSR SetNumFiles
+	PLA
+	STA $101
+	LDA #OK
 	RTS
 
 ; Fills provided DiskInfo structure with data read off the current disk.
+; DiskInfo layout: 10 Disk ID bytes, file count, then file ID and 8-byte name
+; for each file, then disk size (big endian). Disk size is the sum of every
+; file's size plus 261 per file.
 ; Parameters: Pointer to Disk Info
 ; Returns: A = error #
+; Affects: $00-$0F
 API_ENTRYPOINT $e32a
 GetDiskInfo:
-	RTS
+	LDA #$00
+	JSR GetHardCodedPointers ; ($00) = DiskInfo
+	LDA $101
+	PHA
+	LDA #$00
+	STA $0e ; disk size, low byte
+	STA $0f ; disk size, high byte
+	JSR StartXfer
+	LDY #$00
+@diskIdLoop:
+	JSR XferByte
+	STA ($00),y
+	INY
+	CPY #10
+	BNE @diskIdLoop
+	LDY #31 ; skip the boot file ID and the rest of block 1
+@skipBlock1:
+	JSR XferByte
+	DEY
+	BNE @skipBlock1
+	JSR EndOfBlockRead
+	JSR GetNumFiles
+	LDA $06
+	LDY #10
+	STA ($00),y
+	INY
+	STY $05 ; next DiskInfo index
+	LDA $06
+	BEQ @done
+@fileLoop:
+	LDA #$03
+	JSR CheckBlockType
+	JSR XferByte ; file number, not reported
+	LDX #9 ; file ID and 8-byte name
+@nameLoop:
+	JSR XferByte
+	LDY $05
+	STA ($00),y
+	INC $05
+	DEX
+	BNE @nameLoop
+	JSR XferByte ; load address, not reported
+	JSR XferByte
+	JSR XferByte
+	STA $0c ; file size
+	JSR XferByte
+	STA $0d
+	JSR XferByte ; file type, not reported
+	; disk size += file size + 261 ($105)
+	LDA $0c
+	CLC
+	ADC $0e
+	STA $0e
+	LDA $0d
+	ADC $0f
+	STA $0f
+	LDA $0e
+	CLC
+	ADC #$05
+	STA $0e
+	LDA $0f
+	ADC #$01
+	STA $0f
+	JSR EndOfBlockRead
+	LDA #$04
+	JSR CheckBlockType
+@skipData:
+	JSR DecPtr0C
+	BCC @endData
+	JSR XferByte
+	JMP @skipData
+@endData:
+	JSR EndOfBlockRead
+	DEC $06
+	BNE @fileLoop
+@done:
+	LDY $05
+	LDA $0f
+	STA ($00),y
+	INY
+	LDA $0e
+	STA ($00),y
+	PLA
+	STA $101
+	JMP XferDone
 
+; Adds Y to the 16-bit pointer at $0A.
+; Parameters: Y = value to add
+; Affects: A, $0A, $0B
 API_ENTRYPOINT $e3da
 AddYtoPtr0A:
+	TYA
+	CLC
+	ADC $0a
+	STA $0a
+	BCC +
+	INC $0b
++:
 	RTS
 
 INCLUDE gethardcodedpointers.asm
@@ -366,8 +491,25 @@ FileMatchTest:
 
 ; Skips over specified number of files.
 ; Parameters: Number of files to skip in $06
+; Affects: $06, $09, $0A-$0D, $0F
 API_ENTRYPOINT $e4da
 SkipFiles:
+	LDA $06
+	BEQ @done
+@loop:
+	LDA #$03
+	JSR CheckBlockType
+	LDY #10 ; file number, file ID, and 8-byte name
+@skipHeader:
+	JSR XferByte
+	DEY
+	BNE @skipHeader
+	LDA #$ff ; read the file without storing it
+	STA $09
+	JSR LoadData
+	DEC $06
+	BNE @loop
+@done:
 	RTS
 
 ;load if $09 is 0, otherwise skip
@@ -384,7 +526,7 @@ LoadData:
 API_ENTRYPOINT $e506
 ReadData:
 	JSR XferByte
-	STA #$05
+	STA $0f ; file type. $05 stays free for WriteFile's file number.
 	BEQ @notVram
 	BIT $09
 	BMI @notVram;if dummy read, don't set up PPU for write
@@ -407,14 +549,15 @@ ReadData:
 	JSR DecPtr0C;decrement before loop to prevent off-by-one
 	BCC @endloop;because eof is determined by underflow
 @loop:
-	JSR Xfer1stByte
+	JSR XferByte ; CheckBlockType already enabled transfer IRQs
 	BIT $09
 	BMI @loopDec0C;if $09 is $ff, don't store data
-	LDY $05
+	LDY $0f
 	BEQ @storePRG
-	STA $2007
-	BNE @loopDec0C
+	STA PPUDATA
+	JMP @loopDec0C ; a BNE here would fall through when the byte is 0
 @storePRG:
+	LDY #$00
 	STA ($0a),y
 	JSR Inc0ADec0C
 	BCS @loop
@@ -422,9 +565,15 @@ ReadData:
 	JSR EndOfBlockRead
 	RTS
 
+; Writes or verifies one file: the rest of the header block (whose block type
+; was already transferred), then the data block.
+; Parameters: A = $00 to write, $ff to verify; ($02) = File Header; $05 = file
+;             number on disk
+; Returns: on a verify mismatch, exits through ErrorOccurred with error $26
+; Affects: $07-$0E
 API_ENTRYPOINT $e5b5
 SaveData:
-	TAX
+	STA $09
 	LDY #$0b
 	LDA ($02),y;get file size
 	STA $0c
@@ -440,66 +589,46 @@ SaveData:
 	INY
 	LDA ($02),y;get file location (RAM/VRAM)
 	STA $0e; 0 means CPU RAM
+
+	LDA $05 ; file number
+	JSR XferOrVerify
+	LDY #$00
+@headerLoop:
+	LDA ($02),y ; file ID, name, load address, size, and type
+	JSR XferOrVerify
+	INY
+	CPY #$0e
+	BNE @headerLoop
+	JSR EndOfBlockXfer
+	LDA #$04
+	JSR StartDataBlock
+
+	LDA $0e
 	BEQ @begin
 	JSR DisPFObj
-	BIT PPUADDR
-	LDY $0b
-	STY PPUADDR
-	LDY $0a
-	STY PPUADDR
+	BIT PPUSTATUS
+	LDA $0b
+	STA PPUADDR
+	LDA $0a
+	STA PPUADDR
+	LDA PPUDATA ; VRAM reads are buffered, so discard the first one
 @begin:
-	INX
-	BEQ @verifyData
+	JSR DecPtr0C ; the loop ends when the size underflows
+	BCC @end
+@dataLoop:
 	LDY #$00
-@saveLoop:
 	LDA $0e
 	BEQ @RAMSource
 	LDA PPUDATA
-	JMP @save
+	JMP @xfer
 @RAMSource:
 	LDA ($0a),y
-@save:
-	JSR Xfer1stByte
+@xfer:
+	JSR XferOrVerify
 	JSR Inc0ADec0C
-	BCS @saveLoop
-	RTS
-
-
-
-
-@verifyData:
-	LDY #$00
-@verifyHeaderLoop:
-	JSR Xfer1stByte
-	CMP ($02),y
-	BNE @errorH
-	INY
-	CPY #$0e
-	BCC @verifyHeaderLoop
-	;
-
-	LDA #$04
-	JSR CheckBlockType
-	LDY #$00
-@verifyFileLoop:
-	JSR Xfer1stByte
-	LDX $0e
-	BEQ @WRAMCompare
-	CMP PPUDATA
-	BNE @errorF
-	BEQ @continue
-@WRAMCompare:
-	CMP ($0a),y
-	BNE @errorF
-@continue:
-	JSR Inc0ADec0C
-	BCS @verifyFileLoop
-	RTS
-
-@errorH:
-@errorF:
-	LDA #$ff
-	RTS
+	BCS @dataLoop
+@end:
+	JMP EndOfBlockXfer
 
 API_ENTRYPOINT $e64d
 WaitForDriveReady:
@@ -589,7 +718,7 @@ StartXfer:
 	BPL @loop
 	RTS
 @error:
-	LDA #$20
+	LDA #WRONG_SIGNATURE
 	JSR ErrorOccurred
 
 API_ENTRYPOINT $e706
@@ -609,9 +738,27 @@ EndOfBlockRead:
 @error:
 	JSR ErrorOccurred
 
+; Finishes writing a block: has the drive write the block's CRC, checks that
+; the disk did not run out, then switches the drive back to read mode.
+; Returns: on a full disk, exits through ErrorOccurred with error $30
 API_ENTRYPOINT $e729
 EndOfBlkWrite:
-	RTS
+	LDA ZP_FDSCTRL
+	ORA #$10 ; transfer the CRC
+	STA ZP_FDSCTRL
+	STA FDSCTRL
+	JSR XferByte ; two CRC bytes
+	JSR XferByte
+	LDA DRIVESTATUS
+	AND #$02
+	BEQ @ok
+	LDA #DISK_FULL
+	JMP ErrorOccurred
+@ok:
+	LDA ZP_FDSCTRL
+	ORA #$04 ; read mode
+	STA ZP_FDSCTRL
+	JMP XferDone
 
 API_ENTRYPOINT $e778
 XferDone:
@@ -623,10 +770,7 @@ ErrorNotZero:
 	BNE ErrorOccurred
 	RTS
 ErrorOccurred:
-	LDX $04
-	TXS
-	NOP
-API_ENTRYPOINT $e786
+	JMP ErrorUnwind
 EndRead:
 	PHA
 	LDA ZP_FDSCTRL
@@ -814,19 +958,9 @@ JumpEngine:
 ; (indirect) jump!
 	JMP ($00)
 
-; Read Family Basic Keyboard expansion
-API_ENTRYPOINT $eb13
-ReadKeyboard:
-	RTS
-
+INCLUDE keyboard.asm
 INCLUDE loadtileset.asm
-
-; Some kind of logic that some games use. (detail is under analysis)
-; Parameters: $00-$01 Pointer to structure... ?
-; Affects: A, X, Y, $02, $03, $04, $05, $06, $07, $08, $09
-API_ENTRYPOINT $ec22
-unk_EC22:
-	RTS
+INCLUDE uploadobject.asm
 
 API_ENTRYPOINT $ee17
 StartMotor:
@@ -837,6 +971,58 @@ StartMotor:
 	RTS
 
 ; private functions
+
+; Returns from a disk API with an error. GetHardCodedPointers saved the stack
+; position in $04, and every disk API pushes $0101 right after calling it, so
+; that byte sits just below the saved position.
+; Parameters: A = error #
+ErrorUnwind:
+	LDX $04
+	TXS
+	LDY $0100,x
+	STY IRQ_ACTION
+	PHA
+	LDA ZP_FDSCTRL
+	ORA #$04 ; leave the drive in read mode, even after a failed write
+	STA ZP_FDSCTRL
+	PLA
+	JMP EndRead
+
+; Writes A to the disk, or reads a byte and compares it to A, depending on $09.
+; The block must already be started, so XferByte is fast enough here.
+; Parameters: A = byte, $09 = $00 to write, $ff to verify
+; Returns: on a mismatch, exits through ErrorOccurred with error $26
+; Affects: A, $08
+XferOrVerify:
+	BIT $09
+	BMI @verify
+	JMP XferByte
+@verify:
+	STA $08
+	JSR XferByte
+	CMP $08
+	BNE @mismatch
+	RTS
+@mismatch:
+	LDA #$26 ; readback verification failed
+	JMP ErrorOccurred
+
+; Ends the current block with EndOfBlkWrite or EndOfBlockRead, depending on $09.
+EndOfBlockXfer:
+	BIT $09
+	BMI @read
+	JMP EndOfBlkWrite
+@read:
+	JMP EndOfBlockRead
+
+; Starts the next block with WriteBlockType or CheckBlockType, depending on $09.
+; Parameters: A = block type
+StartDataBlock:
+	BIT $09
+	BMI @read
+	JMP WriteBlockType
+@read:
+	JMP CheckBlockType
 
 ; Checks whether the little-endian address provided in ($02) plus the offset in
 ; $04 is in the range $3Fxx (or one of its mirrors). Checks the current PPU

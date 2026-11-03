@@ -23,6 +23,8 @@ DISK_RESET_VEC EQU $DFFC
 RESET:
     SEI ; disable interrupts
     CLD ; clear decimal mode flag, which doesn't work on the 2A03 anyway
+    LDX #$FF
+    TXS
 
     ; don't allow NMIs until we're ready
     LDY #$00
@@ -73,6 +75,29 @@ RESET:
     LDA #$FF
     STA ZP_EXTCONN
     STA EXTCONNWR
+
+    LDA #$C0 ; game NMI #3
+    STA NMI_ACTION
+    LDA #$80 ; BIOS acknowledge and delay
+    STA IRQ_ACTION
+
+    ; A game that is already loaded restarts at its own reset vector.
+    LDA RESET_ACTION_1
+    CMP #$35
+    BNE @coldBoot
+    LDA RESET_ACTION_2
+    CMP #$AC
+    BEQ @softReset
+    CMP #$53
+    BNE @coldBoot
+@softReset:
+    LDA #$53 ; the game has already booted once
+    STA RESET_ACTION_2
+    LDA #$80
+    STA ZP_PPUCTRL
+    STA PPUCTRL
+    JMP (DISK_RESET_VEC)
+@coldBoot:
 
     ; prepare the VRAM buffer
     LDA #$7D ; initial write buffer found at $302-$37F
