@@ -8,7 +8,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fds_sim import Machine, build_disk  # noqa: E402
+from fds_sim import FRAME_CYCLES, VBLANK_CYCLES, Machine, build_disk  # noqa: E402
 
 ROM_PATH = os.environ.get("FDS_ROM", "disksys.rom")
 
@@ -88,6 +88,24 @@ class BootTest(BiosTest):
         m.reset()
         m.run_until(GAME_LOOP, max_cycles=200_000)
         self.assertEqual(m.mem[0x0103], 0x53)
+
+    def assertHandsOffJustAfterVblank(self, m):
+        m.run_until(0x6000)
+        self.assertTrue(m.ppuctrl & 0x80, "NMIs off at handoff")
+        into_frame = m.mpu.processorCycles - (m.next_frame - FRAME_CYCLES)
+        self.assertLess(into_frame, VBLANK_CYCLES, "game started mid-frame, so an NMI could interrupt its setup")
+
+    def test_starts_game_just_after_vblank(self):
+        m = self.machine()
+        m.reset()
+        self.assertHandsOffJustAfterVblank(m)
+
+    def test_soft_reset_starts_game_just_after_vblank(self):
+        m = self.machine()
+        m.reset()
+        m.run_until(GAME_LOOP)
+        m.reset()
+        self.assertHandsOffJustAfterVblank(m)
 
 
 class DemoDiskTest(BiosTest):
@@ -288,6 +306,57 @@ class KeyboardTest(BiosTest):
         self.assertEqual(m.mem[0x08], 0x01)  # row 0
         self.assertEqual(m.mem[0x00], 0x80)  # row 8
         self.assertEqual(m.mem[0x01:0x08], [0] * 7)
+
+
+VRAM_STRUCT_WRITE = 0xE7BB
+WRITE_VRAM_BUFFERS = 0xE86A
+LOAD_TILESET = 0xEBAF
+
+
+class VramTest(BiosTest):
+    """Games call these from NMI handlers, so they must leave the zero-page
+    bytes outside their documented lists alone."""
+
+    def fill_zero_page(self, m):
+        m.mem.write(0x0000, [0xA0 + i for i in range(16)])
+
+    def test_vram_struct_write(self):
+        m = self.machine()
+        long_run = [(i * 3) & 0xFF for i in range(64)]
+        struct = []
+        for row in range(5):  # 5 * 67 bytes, past the 256-byte index limit
+            struct += [0x20, row * 64, 0x00] + long_run
+        struct += [0x4C, 0x00, 0x05]  # call the sub-structure at $0500
+        struct += [0x23, 0x00, 0x44, 0x7E]  # fill 4 bytes with $7E
+        struct += [0x24, 0x00, 0x82, 0x11, 0x22]  # 2 bytes, incrementing by 32
+        struct += [0xFF]
+        m.mem.write(0x6000, struct)
+        m.mem.write(0x0500, [0x22, 0x80, 0x02, 0x55, 0x66, 0x60])
+        self.fill_zero_page(m)
+        m.call(VRAM_STRUCT_WRITE, params=[0x6000])
+        for row in range(5):
+            self.assertEqual(m.vram[0x2000 + row * 64:0x2040 + row * 64], long_run)
+        self.assertEqual(m.vram[0x2280:0x2282], [0x55, 0x66])
+        self.assertEqual(m.vram[0x2300:0x2304], [0x7E] * 4)
+        self.assertEqual((m.vram[0x2400], m.vram[0x2420]), (0x11, 0x22))
+        self.assertEqual(m.mem[0x0002:0x0010], [0xA0 + i for i in range(2, 16)])
+
+    def test_write_vram_buffers(self):
+        m = self.machine()
+        m.mem.write(0x0300, [0x7D, 0x08, 0x21, 0x00, 0x03, 0x01, 0x02, 0x03, 0x80])
+        self.fill_zero_page(m)
+        m.call(WRITE_VRAM_BUFFERS)
+        self.assertEqual(m.vram[0x2100:0x2103], [1, 2, 3])
+        self.assertEqual((m.mem[0x0301], m.mem[0x0302]), (0x00, 0x80))
+        self.assertEqual(m.mem[0x0000:0x0010], [0xA0 + i for i in range(16)])
+
+    def test_load_tileset_leaves_05_and_up(self):
+        m = self.machine()
+        m.mem.write(0x6000, [0xFF] * 8)
+        self.fill_zero_page(m)
+        # one 1-bit-per-pixel tile from $6000, as the boot code loads its font
+        m.call(LOAD_TILESET, a=0x04, x=1, params=[0x6000])
+        self.assertEqual(m.mem[0x0005:0x0010], [0xA0 + i for i in range(5, 16)])
 
 
 class UploadObjectTest(BiosTest):

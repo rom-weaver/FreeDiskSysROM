@@ -11,6 +11,7 @@ from py65.memory import ObservableMemory
 
 BYTE_CYCLES = 148  # 96.4 kbit/s at 1.79 MHz is about 148.5 cycles per byte
 FRAME_CYCLES = 29781
+VBLANK_CYCLES = 2273  # the vblank flag clears at the pre-render line, 20 scanlines in
 DELAYMS = 0xE153
 
 
@@ -187,6 +188,8 @@ class Machine:
         self.inserted = inserted
         self.write_protected = write_protected
         self.keyboard = None  # None = no keyboard connected
+        self.buttons = 0  # controller 1: A, B, Select, Start, Up, Down, Left, Right in bits 0-7
+        self.pad_shift = 0
 
         # PPU
         self.vram = [0] * 0x4000
@@ -275,6 +278,8 @@ class Machine:
     # controllers and keyboard
     def _pad_write(self, addr, value):
         if value & 1:
+            self.pad_shift = self.buttons
+        if value & 1:
             self.kb_row = 0
             self.kb_col = 0
         else:
@@ -286,6 +291,10 @@ class Machine:
         return value
 
     def _pad_read(self, addr):
+        if addr == 0x4016:
+            bit = self.pad_shift & 1
+            self.pad_shift = (self.pad_shift >> 1) | 0x80
+            return bit
         if addr == 0x4017 and self.keyboard is not None and self.kb_enabled:
             if self.kb_row < 9:
                 pressed = self.keyboard[self.kb_row][self.kb_col]  # 4 bits
@@ -307,6 +316,10 @@ class Machine:
             old = self.fdsctrl
             self.fdsctrl = value
             if value & 0x02:
+                # Transfer reset: stop any transfer and rewind to the start.
+                self.current = None
+                self.capture = None
+                self.next_byte = None
                 self.next_block = 0
             if not old & 0x40 and value & 0x40 and self.current is None:
                 self._start_block()
@@ -428,6 +441,8 @@ class Machine:
             self.vblank = True
             if self.ppuctrl & 0x80:
                 self.nmi_pending = True
+        elif self.vblank and mpu.processorCycles >= self.next_frame - FRAME_CYCLES + VBLANK_CYCLES:
+            self.vblank = False
         if self.fceumm:
             self.fceumm.tick(mpu.processorCycles - self.last_cycles)
             self.last_cycles = mpu.processorCycles
@@ -452,7 +467,7 @@ class Machine:
         self.mpu.pc = self.mpu.WordAt(0xFFFC)
         self.mpu.p |= self.mpu.INTERRUPT
 
-    def call(self, address, a=0, x=0, params=(), max_cycles=40_000_000):
+    def call(self, address, a=0, x=0, y=0, params=(), max_cycles=40_000_000):
         """Calls a BIOS routine from a stub at $0400, followed by 16-bit
         parameter words. Returns (A, X, Y)."""
         stub = [0x20, address & 0xFF, address >> 8]
@@ -466,6 +481,7 @@ class Machine:
         mpu.sp = 0xFF
         mpu.a = a
         mpu.x = x
+        mpu.y = y
         mpu.p = mpu.UNUSED | mpu.INTERRUPT
         self.run_until(end, max_cycles)
         return mpu.a, mpu.x, mpu.y
